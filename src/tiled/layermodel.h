@@ -21,12 +21,14 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QIcon>
 
 namespace Tiled {
 
 class GroupLayer;
 class Layer;
+class Object;
 class Map;
 
 class ChangeEvent;
@@ -98,6 +100,8 @@ signals:
 
 private:
     void documentChanged(const ChangeEvent &change);
+    void propertyChanged(Object *object);
+    QIcon folderIcon(const GroupLayer *groupLayer) const;
 
     Map *map() const;
 
@@ -106,6 +110,7 @@ private:
     QIcon mTileLayerIcon;
     QIcon mObjectGroupIcon;
     QIcon mImageLayerIcon;
+    mutable QHash<QRgb, QIcon> mFolderIcons;
 };
 
 /**

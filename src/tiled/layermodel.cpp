@@ -29,6 +29,7 @@
 #include "reparentlayers.h"
 
 #include <QApplication>
+#include <QPainter>
 #include <QMimeData>
 #include <QStyle>
 
@@ -126,7 +127,7 @@ QVariant LayerModel::data(const QModelIndex &index, int role) const
             case Layer::ImageLayerType:
                 return mImageLayerIcon;
             case Layer::GroupLayerType:
-                return QApplication::style()->standardIcon(QStyle::SP_DirIcon);
+                return folderIcon(static_cast<GroupLayer*>(layer));
             }
         }
         break;
@@ -366,8 +367,23 @@ void LayerModel::setMapDocument(MapDocument *mapDocument)
     if (mMapDocument)
         disconnect(mMapDocument, &Document::changed, this, &LayerModel::documentChanged);
 
-    if (mapDocument)
+    if (mMapDocument) {
+        disconnect(mMapDocument, &Document::propertyAdded, this, nullptr);
+        disconnect(mMapDocument, &Document::propertyRemoved, this, nullptr);
+        disconnect(mMapDocument, &Document::propertyChanged, this, nullptr);
+        disconnect(mMapDocument, &Document::propertiesChanged, this, nullptr);
+    }
+
+    if (mapDocument) {
         connect(mapDocument, &Document::changed, this, &LayerModel::documentChanged);
+
+        // The color of a group layer's folder icon comes from a custom property
+        auto update = [this] (Object *object) { propertyChanged(object); };
+        connect(mapDocument, &Document::propertyAdded, this, update);
+        connect(mapDocument, &Document::propertyRemoved, this, update);
+        connect(mapDocument, &Document::propertyChanged, this, update);
+        connect(mapDocument, &Document::propertiesChanged, this, update);
+    }
 
     beginResetModel();
     mMapDocument = mapDocument;
@@ -577,6 +593,49 @@ void LayerModel::toggleLockOtherLayers(const QList<Layer *> &layers)
         command->setText(tr("Unlock Other Layers"));
 
     mMapDocument->undoStack()->push(command);
+}
+
+/**
+ * Returns the icon to use for a group layer. It is a folder, which is tinted
+ * with the color of the "folderColor" custom property of the layer when set.
+ */
+QIcon LayerModel::folderIcon(const GroupLayer *groupLayer) const
+{
+    const QIcon folder = QApplication::style()->standardIcon(QStyle::SP_DirIcon);
+
+    const QVariant value = groupLayer->property(QStringLiteral("folderColor"));
+    const QColor color = value.userType() == QMetaType::QColor ? value.value<QColor>()
+                                                                 : QColor(value.toString());
+    if (!color.isValid())
+        return folder;
+
+    auto it = mFolderIcons.find(color.rgb());
+    if (it == mFolderIcons.end()) {
+        QIcon tinted;
+        for (const int size : { 16, 32 }) {
+            QPixmap pixmap = folder.pixmap(size, size);
+            QPainter painter(&pixmap);
+            painter.setCompositionMode(QPainter::CompositionMode_SourceAtop);
+            painter.fillRect(pixmap.rect(), QColor(color.red(), color.green(), color.blue(), 200));
+            painter.end();
+            tinted.addPixmap(pixmap);
+        }
+        it = mFolderIcons.insert(color.rgb(), tinted);
+    }
+
+    return it.value();
+}
+
+void LayerModel::propertyChanged(Object *object)
+{
+    if (object->typeId() != Object::LayerType)
+        return;
+
+    auto layer = static_cast<Layer*>(object);
+    if (layer->isGroupLayer()) {
+        const QModelIndex i = index(layer);
+        emit dataChanged(i, i, { Qt::DecorationRole });
+    }
 }
 
 void LayerModel::documentChanged(const ChangeEvent &change)
