@@ -138,6 +138,7 @@ private:
 
     void tilesetChanged(Tileset *tileset);
     void tilesetFileNameChanged(const QString &fileName);
+    void updateTabInfo(int index);
 
     void replaceTileset();
     void replaceTilesetAt(int index);
@@ -148,6 +149,7 @@ private:
     void editTileset();
     void embedTileset();
     void exportTileset();
+    void editAllowedLayers(TilesetDocument *tilesetDocument);
 
     void refreshTilesetMenu();
 

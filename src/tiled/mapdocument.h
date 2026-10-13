@@ -178,6 +178,8 @@ public:
     SharedTileset replaceTileset(int index, const SharedTileset &tileset);
 
     QList<TileLayer*> findTargetLayers(const QList<const TileLayer *> &sourceLayers) const;
+    bool canPaintOnLayer(const TileLayer *source, const TileLayer *target);
+    void selectLayerForTiles(const TileLayer *tiles);
     void paintTileLayers(const Map &map, bool mergeable = false,
                          QVector<SharedTileset> *missingTilesets = nullptr,
                          QHash<TileLayer *, QRegion> *paintedRegions = nullptr);
@@ -273,6 +275,12 @@ public:
     QSet<int> expandedObjectLayers;
 
 signals:
+    /**
+     * Emitted when painting was refused because a tileset is restricted to
+     * layers with other names (see canPaintOnLayer).
+     */
+    void paintBlocked(const QString &message);
+
     /**
      * Emitted when the selected tile region changes. Sends the currently
      * selected region and the previously selected region.

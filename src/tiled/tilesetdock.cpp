@@ -23,12 +23,15 @@
 #include "tilesetdock.h"
 
 #include "actionmanager.h"
+#include "allowedlayersdialog.h"
 #include "addremovemapobject.h"
 #include "addremovetileset.h"
+#include "changeproperties.h"
 #include "containerhelpers.h"
 #include "documentmanager.h"
 #include "editabletile.h"
 #include "erasetiles.h"
+#include "grouplayer.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapobject.h"
@@ -638,7 +641,7 @@ void TilesetDock::createTilesetView(int index, TilesetDocument *tilesetDocument)
     // changes (happens when first tab is inserted).
     mViewStack->insertWidget(index, view);
     mTabBar->insertTab(index, tabTitle(tilesetDocument));
-    mTabBar->setTabToolTip(index, tileset->fileName());
+    updateTabInfo(index);
 
     // Workaround a bug that appears to have snug into Qt 6 which causes the
     // tab bar to be entirely invisible if only a single tab exists.
@@ -651,6 +654,17 @@ void TilesetDock::createTilesetView(int index, TilesetDocument *tilesetDocument)
             this, &TilesetDock::tilesetFileNameChanged);
     connect(tilesetDocument, &TilesetDocument::tilesetChanged,
             this, &TilesetDock::tilesetChanged);
+
+    // Show an indicator on the tab when the tileset has allowed layers
+    auto updateTab = [=] {
+        const int tabIndex = mTilesetDocuments.indexOf(tilesetDocument);
+        if (tabIndex != -1)
+            updateTabInfo(tabIndex);
+    };
+    connect(tilesetDocument, &Document::propertyAdded, this, updateTab);
+    connect(tilesetDocument, &Document::propertyRemoved, this, updateTab);
+    connect(tilesetDocument, &Document::propertyChanged, this, updateTab);
+    connect(tilesetDocument, &Document::propertiesChanged, this, updateTab);
 
     connect(view, &TilesetView::clicked,
             this, &TilesetDock::updateCurrentTiles);
@@ -855,6 +869,10 @@ void TilesetDock::setCurrentTiles(std::unique_ptr<TileLayer> tiles)
         stamp->addLayer(mCurrentTiles->clone());
         stamp->addTilesets(mCurrentTiles->usedTilesets());
 
+        // Switch to a layer that accepts these tiles, if some tileset is
+        // restricted to layers with specific names
+        mMapDocument->selectLayerForTiles(mCurrentTiles.get());
+
         QScopedValueRollback<bool> emittingStampCaptured(mEmittingStampCaptured, true);
         emit stampCaptured(TileStamp(std::move(stamp)));
     }
@@ -984,6 +1002,7 @@ void TilesetDock::tabContextMenuRequested(const QPoint &pos)
     menu.addAction(mEditTileset->icon(), mEditTileset->text(), this, [tileset = tilesetDocument->tileset()] {
         DocumentManager::instance()->openTileset(tileset);
     });
+    menu.addAction(tr("Allowed Layers..."), this, [=] { editAllowedLayers(tilesetDocument); });
 
     menu.exec(mTabBar->mapToGlobal(pos));
 }
@@ -1220,6 +1239,29 @@ void TilesetDock::embedTileset()
         mTabBar->setCurrentIndex(embeddedTilesetIndex);
 }
 
+/**
+ * Updates the tool tip of the tab and shows a discreet icon when the tileset
+ * is restricted to certain layers (see MapDocument::canPaintOnLayer).
+ */
+void TilesetDock::updateTabInfo(int index)
+{
+    const Tileset *tileset = mTilesetDocuments.at(index)->tileset().data();
+    const QString allowedLayers = tileset->property(QStringLiteral("allowedLayers")).toString();
+
+    QStringList toolTip;
+    if (!tileset->fileName().isEmpty())
+        toolTip.append(tileset->fileName());
+
+    if (allowedLayers.isEmpty()) {
+        mTabBar->setTabIcon(index, QIcon());
+    } else {
+        mTabBar->setTabIcon(index, QIcon(QStringLiteral(":/images/scalable/allowed-layers.svg")));
+        toolTip.append(tr("Allowed layers: %1").arg(allowedLayers));
+    }
+
+    mTabBar->setTabToolTip(index, toolTip.join(QLatin1Char('\n')));
+}
+
 void TilesetDock::tilesetFileNameChanged(const QString &fileName)
 {
     TilesetDocument *tilesetDocument = static_cast<TilesetDocument*>(sender());
@@ -1227,10 +1269,56 @@ void TilesetDock::tilesetFileNameChanged(const QString &fileName)
     const int index = mTilesetDocuments.indexOf(tilesetDocument);
     Q_ASSERT(index != -1);
 
-    mTabBar->setTabToolTip(index, fileName);
+    updateTabInfo(index);
     mTabBar->setTabText(index, tabTitle(tilesetDocument));
 
     updateActions();
+}
+
+static void collectLayerNames(const QList<Layer*> &layers, QStringList &names)
+{
+    for (Layer *layer : layers) {
+        if (auto groupLayer = layer->asGroupLayer()) {
+            collectLayerNames(groupLayer->layers(), names);
+        } else if (!names.contains(layer->name(), Qt::CaseInsensitive)) {
+            names.append(layer->name());
+        }
+    }
+}
+
+/**
+ * Lets the user choose the layers on which the tileset may be used. This is
+ * stored in the "allowedLayers" custom property of the tileset (see
+ * MapDocument::canPaintOnLayer).
+ */
+void TilesetDock::editAllowedLayers(TilesetDocument *tilesetDocument)
+{
+    if (!mMapDocument)
+        return;
+
+    const QString property = QStringLiteral("allowedLayers");
+    Tileset *tileset = tilesetDocument->tileset().data();
+
+    QStringList allowedLayers;
+    const auto names = tileset->property(property).toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &name : names)
+        allowedLayers.append(name.trimmed());
+
+    QStringList layerNames;
+    collectLayerNames(mMapDocument->map()->layers(), layerNames);
+
+    AllowedLayersDialog dialog(tileset->name(), layerNames, allowedLayers, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QStringList result = dialog.allowedLayers();
+    if (result.isEmpty()) {
+        if (tileset->hasProperty(property))
+            tilesetDocument->undoStack()->push(new RemoveProperty(tilesetDocument, { tileset }, property));
+    } else {
+        tilesetDocument->undoStack()->push(new SetProperty(tilesetDocument, { tileset }, property,
+                                                           result.join(QStringLiteral(", "))));
+    }
 }
 
 void TilesetDock::refreshTilesetMenu()
@@ -1250,6 +1338,8 @@ void TilesetDock::refreshTilesetMenu()
     }
 
     mTilesetMenu->addSeparator();
+    if (auto tilesetDocument = currentTilesetDocument())
+        mTilesetMenu->addAction(tr("Allowed Layers..."), this, [=] { editAllowedLayers(tilesetDocument); });
     mTilesetMenu->addAction(mShowTilesetFilter);
     mTilesetMenu->addAction(ActionManager::action("AddExternalTileset"));
 }

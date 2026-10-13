@@ -71,6 +71,8 @@ DynamicLibrary {
         "aboutdialog.cpp",
         "aboutdialog.h",
         "aboutdialog.ui",
+        "allowedlayersdialog.cpp",
+        "allowedlayersdialog.h",
         "abstractobjecttool.cpp",
         "abstractobjecttool.h",
         "abstracttilefilltool.cpp",

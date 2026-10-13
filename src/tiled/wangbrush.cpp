@@ -498,6 +498,9 @@ void WangBrush::doPaint(bool mergeable)
     if (!tileLayer->map()->infinite() && !QRegion(tileLayer->rect()).intersects(brushItem()->tileRegion()))
         return;
 
+    if (!mapDocument()->canPaintOnLayer(stamp, tileLayer))
+        return;
+
     PaintTileLayer *paint = new PaintTileLayer(mapDocument(), tileLayer,
                                                stamp->x(), stamp->y(),
                                                stamp, brushItem()->tileRegion());

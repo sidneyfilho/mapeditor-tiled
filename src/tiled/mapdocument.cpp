@@ -1054,6 +1054,95 @@ QList<TileLayer *> MapDocument::findTargetLayers(const QList<const TileLayer *> 
  * In this case it is the responsibility of the caller to emit this signal for
  * each affected tile layer.
  */
+/**
+ * A tileset can be restricted to certain layers by giving it an "allowedLayers"
+ * custom property, containing a comma-separated list of layer names (compared
+ * case-insensitively). Returns whether painting tiles of  tileset on a layer
+ * with the given name is allowed.
+ */
+static bool isTilesetAllowedOnLayer(const Tileset &tileset, const QString &layerName,
+                                    QString *allowedLayers = nullptr)
+{
+    const QVariant value = tileset.property(QStringLiteral("allowedLayers"));
+    if (!value.isValid())
+        return true;
+
+    const QString allowed = value.toString();
+    if (allowedLayers)
+        *allowedLayers = allowed;
+
+    const QStringList names = allowed.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    return std::any_of(names.begin(), names.end(), [&] (const QString &name) {
+        return name.trimmed().compare(layerName, Qt::CaseInsensitive) == 0;
+    });
+}
+
+/**
+ * Returns false, after emitting paintBlocked, when the tiles of  source can
+ * not be painted on  target because of a tileset restricted to other layers.
+ */
+bool MapDocument::canPaintOnLayer(const TileLayer *source, const TileLayer *target)
+{
+    const auto tilesets = source->usedTilesets();
+    for (const SharedTileset &tileset : tilesets) {
+        QString allowedLayers;
+        if (!isTilesetAllowedOnLayer(*tileset, target->name(), &allowedLayers)) {
+            emit paintBlocked(tr("Tileset '%1' can only be used on layers named: %2 (current layer: %3)")
+                              .arg(tileset->name(), allowedLayers, target->name()));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void collectTileLayers(const QList<Layer*> &layers, QList<TileLayer*> &tileLayers)
+{
+    for (Layer *layer : layers) {
+        if (auto groupLayer = layer->asGroupLayer())
+            collectTileLayers(groupLayer->layers(), tileLayers);
+        else if (auto tileLayer = layer->asTileLayer())
+            tileLayers.append(tileLayer);
+    }
+}
+
+/**
+ * When the current layer is a tile layer that can not be painted on with the
+ * given  tiles (see canPaintOnLayer), switches to a layer that can, looking
+ * only at the layers within the same group as the current layer. The topmost
+ * matching layer is preferred.
+ */
+void MapDocument::selectLayerForTiles(const TileLayer *tiles)
+{
+    TileLayer *current = mCurrentLayer ? mCurrentLayer->asTileLayer() : nullptr;
+    if (!current)
+        return;
+
+    const auto tilesets = tiles->usedTilesets();
+    auto allowedOn = [&] (const TileLayer *layer) {
+        return std::all_of(tilesets.begin(), tilesets.end(), [&] (const SharedTileset &tileset) {
+            return isTilesetAllowedOnLayer(*tileset, layer->name());
+        });
+    };
+
+    if (allowedOn(current))
+        return;
+
+    const GroupLayer *parent = current->parentLayer();
+    QList<TileLayer*> candidates;
+    collectTileLayers(parent ? parent->layers() : mMap->layers(), candidates);
+
+    for (auto it = candidates.crbegin(); it != candidates.crend(); ++it) {
+        if ((*it)->isUnlocked() && allowedOn(*it)) {
+            switchSelectedLayers({ *it });
+            return;
+        }
+    }
+
+    // Nothing to switch to, painting will be refused with an explanation
+    canPaintOnLayer(tiles, current);
+}
+
 void MapDocument::paintTileLayers(const Map &map, bool mergeable,
                                   QVector<SharedTileset> *missingTilesets,
                                   QHash<TileLayer*, QRegion> *paintedRegions)
@@ -1094,6 +1183,8 @@ void MapDocument::paintTileLayers(const Map &map, bool mergeable,
         }
 
         if (!target->isUnlocked())
+            continue;
+        if (!canPaintOnLayer(source, target))
             continue;
         if (!mMap->infinite() && !target->rect().intersects(source->bounds()))
             continue;

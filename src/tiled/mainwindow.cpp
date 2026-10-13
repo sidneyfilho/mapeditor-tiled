@@ -2545,6 +2545,11 @@ void MainWindow::documentChanged(Document *document)
                 this, &MainWindow::updateActions);
         connect(mapDocument, &MapDocument::selectedObjectsChanged,
                 this, &MainWindow::updateActions);
+        connect(mapDocument, &MapDocument::paintBlocked,
+                this, [this] (const QString &message) {
+            QApplication::beep();
+            statusBar()->showMessage(message, 5000);
+        });
     }
 
     mActionHandler->setMapDocument(mapDocument);
