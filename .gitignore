@@ -64,3 +64,6 @@ gmon.out
 # Vim files
 *.swp
 *.swo
+
+# Qt portable (baixado localmente)
+/qt-portable/
