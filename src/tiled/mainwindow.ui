@@ -180,6 +180,7 @@
     <addaction name="actionEnableParallax"/>
     <addaction name="actionHighlightCurrentLayer"/>
     <addaction name="actionFloorMode"/>
+    <addaction name="actionHideAnimationFrames"/>
     <addaction name="actionHighlightHoveredObject"/>
     <addaction name="separator"/>
     <addaction name="menuSnapping"/>
@@ -509,6 +510,17 @@
    </property>
    <property name="shortcut">
     <string notr="true">H</string>
+   </property>
+  </action>
+  <action name="actionHideAnimationFrames">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Hide Animation &amp;Frames in Tilesets</string>
+   </property>
+   <property name="toolTip">
+    <string>Hide the tiles that are only used as a frame of the animation of another tile</string>
    </property>
   </action>
   <action name="actionFloorMode">

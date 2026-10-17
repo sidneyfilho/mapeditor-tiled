@@ -270,6 +270,7 @@ MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
     ActionManager::registerAction(mUi->actionFullScreen, "FullScreen");
     ActionManager::registerAction(mUi->actionHighlightCurrentLayer, "HighlightCurrentLayer");
     ActionManager::registerAction(mUi->actionFloorMode, "FloorMode");
+    ActionManager::registerAction(mUi->actionHideAnimationFrames, "HideAnimationFrames");
     ActionManager::registerAction(mUi->actionHighlightHoveredObject, "HighlightHoveredObject");
     ActionManager::registerAction(mUi->actionGoToTile, "GoToTile");
     ActionManager::registerAction(mUi->actionLabelForHoveredObject, "LabelForHoveredObject");
@@ -432,6 +433,7 @@ MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
     mUi->actionEnableParallax->setChecked(preferences->parallaxEnabled());
     mUi->actionHighlightCurrentLayer->setChecked(preferences->highlightCurrentLayer());
     mUi->actionFloorMode->setChecked(preferences->floorMode());
+    mUi->actionHideAnimationFrames->setChecked(preferences->hideAnimationFrames());
     mUi->actionHighlightHoveredObject->setChecked(preferences->highlightHoveredObject());
     connect(mUi->menuSnapping, &QMenu::aboutToShow, this, [this, preferences] {
         updateSnappingActions(preferences->snapMode());
@@ -586,6 +588,8 @@ MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
             preferences, &Preferences::setHighlightCurrentLayer);
     connect(mUi->actionFloorMode, &QAction::toggled,
             preferences, &Preferences::setFloorMode);
+    connect(mUi->actionHideAnimationFrames, &QAction::toggled,
+            preferences, &Preferences::setHideAnimationFrames);
     connect(mUi->actionHighlightHoveredObject, &QAction::toggled,
             preferences, &Preferences::setHighlightHoveredObject);
     connect(mUi->actionZoomIn, &QAction::triggered, this, &MainWindow::zoomIn);

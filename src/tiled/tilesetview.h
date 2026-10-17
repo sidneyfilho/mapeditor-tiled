@@ -24,6 +24,7 @@
 #include "wangset.h"
 
 #include <QTableView>
+#include <QSet>
 
 namespace Tiled {
 
@@ -80,6 +81,13 @@ public:
     void setMarkAnimatedTiles(bool enabled);
     bool markAnimatedTiles() const;
 
+    /**
+     * Sets whether tiles that only serve as frame of the animation of another
+     * tile should be hidden. Disabled by default.
+     */
+    void setHideAnimationFrames(bool enabled);
+    bool isHiddenAnimationFrame(const Tile *tile) const;
+
     void setRelocateTiles(bool enabled);
     bool isRelocateTiles() const { return mRelocateTiles; }
 
@@ -117,6 +125,8 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    QItemSelectionModel::SelectionFlags selectionCommand(const QModelIndex &index,
+                                                         const QEvent *event = nullptr) const override;
 
 private:
     void onChange(const ChangeEvent &change);
@@ -149,6 +159,9 @@ private:
     TilesetDocument *mTilesetDocument = nullptr;
     bool mDrawGrid;
     bool mMarkAnimatedTiles = true;
+    bool mHideAnimationFrames = false;
+    mutable bool mAnimationFramesDirty = true;
+    mutable QSet<int> mAnimationFrameIds;
     bool mRelocateTiles = false;
     bool mEditWangSet = false;
     WrapBehavior mWrapBehavior = WrapDefault;

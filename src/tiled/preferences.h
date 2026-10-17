@@ -81,6 +81,7 @@ public:
     bool floorMode() const;
     bool highlightHoveredObject() const;
     bool showTilesetGrid() const;
+    bool hideAnimationFrames() const;
 
     enum ObjectLabelVisiblity {
         NoObjectLabels,
@@ -222,6 +223,7 @@ public slots:
     void setFloorMode(bool enabled);
     void setHighlightHoveredObject(bool highlight);
     void setShowTilesetGrid(bool showTilesetGrid);
+    void setHideAnimationFrames(bool hide);
     void setRestoreSessionOnStartup(bool enabled);
     void setPluginEnabled(const QString &fileName, bool enabled);
     void setWheelZoomsByDefault(bool mode);
@@ -248,6 +250,7 @@ signals:
     void floorModeChanged(bool enabled);
     void highlightHoveredObjectChanged(bool highlight);
     void showTilesetGridChanged(bool showTilesetGrid);
+    void hideAnimationFramesChanged(bool hide);
     void objectLabelVisibilityChanged(ObjectLabelVisiblity);
     void labelForHoveredObjectChanged(bool enabled);
 

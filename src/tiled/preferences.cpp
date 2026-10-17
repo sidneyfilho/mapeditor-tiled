@@ -263,6 +263,11 @@ bool Preferences::showTilesetGrid() const
     return get("Interface/ShowTilesetGrid", true);
 }
 
+bool Preferences::hideAnimationFrames() const
+{
+    return get("Interface/HideAnimationFrames", false);
+}
+
 Preferences::ObjectLabelVisiblity Preferences::objectLabelVisibility() const
 {
     return static_cast<ObjectLabelVisiblity>(get<int>("Interface/ObjectLabelVisibility", AllObjectLabels));
@@ -470,6 +475,12 @@ void Preferences::setShowTilesetGrid(bool showTilesetGrid)
 {
     setValue(QLatin1String("Interface/ShowTilesetGrid"), showTilesetGrid);
     emit showTilesetGridChanged(showTilesetGrid);
+}
+
+void Preferences::setHideAnimationFrames(bool hide)
+{
+    setValue(QLatin1String("Interface/HideAnimationFrames"), hide);
+    emit hideAnimationFramesChanged(hide);
 }
 
 void Preferences::setLayerDataFormat(Map::LayerDataFormat layerDataFormat)

@@ -116,6 +116,9 @@ void TileDelegate::paint(QPainter *painter,
     if (!tile)
         return;
 
+    if (mTilesetView->isHiddenAnimationFrame(tile))
+        return;
+
     const QPixmap &tileImage = tile->image();
     const int extra = mTilesetView->drawGrid() ? 1 : 0;
     const qreal zoom = mTilesetView->scale();
@@ -363,6 +366,11 @@ void TilesetView::setTilesetDocument(TilesetDocument *tilesetDocument)
         connect(mTilesetDocument, &Document::changed, this, &TilesetView::onChange);
         connect(mTilesetDocument, &TilesetDocument::tilesAdded, this, &TilesetView::refreshColumnCount);
         connect(mTilesetDocument, &TilesetDocument::tilesRemoved, this, &TilesetView::refreshColumnCount);
+        connect(mTilesetDocument, &TilesetDocument::tileAnimationChanged, this, [this] {
+            mAnimationFramesDirty = true;
+            if (mHideAnimationFrames)
+                viewport()->update();
+        });
     }
 }
 
@@ -445,6 +453,55 @@ void TilesetView::setModel(QAbstractItemModel *model)
     updateBackgroundColor();
     setVerticalScrollBarPolicy(dynamicWrapping() ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAsNeeded);
     refreshColumnCount();
+}
+
+void TilesetView::setHideAnimationFrames(bool enabled)
+{
+    if (mHideAnimationFrames == enabled)
+        return;
+
+    mHideAnimationFrames = enabled;
+    mAnimationFramesDirty = true;
+    viewport()->update();
+}
+
+/**
+ * Returns whether the given tile is only used as a frame of the animation of
+ * another tile, and should be hidden because of that. Tiles that are animated
+ * themselves are always shown.
+ */
+bool TilesetView::isHiddenAnimationFrame(const Tile *tile) const
+{
+    if (!mHideAnimationFrames || tile->isAnimated())
+        return false;
+
+    if (mAnimationFramesDirty) {
+        mAnimationFrameIds.clear();
+
+        const auto tiles = tile->tileset()->tiles();
+        for (const Tile *t : tiles) {
+            for (const Frame &frame : t->frames())
+                mAnimationFrameIds.insert(frame.tileId);
+        }
+
+        mAnimationFramesDirty = false;
+    }
+
+    return mAnimationFrameIds.contains(tile->id());
+}
+
+QItemSelectionModel::SelectionFlags TilesetView::selectionCommand(const QModelIndex &index,
+                                                                  const QEvent *event) const
+{
+    // Hidden tiles can not be selected
+    if (mHideAnimationFrames && index.isValid()) {
+        if (const Tile *tile = tilesetModel()->tileAt(index)) {
+            if (isHiddenAnimationFrame(tile))
+                return QItemSelectionModel::NoUpdate;
+        }
+    }
+
+    return QTableView::selectionCommand(index, event);
 }
 
 void TilesetView::setMarkAnimatedTiles(bool enabled)

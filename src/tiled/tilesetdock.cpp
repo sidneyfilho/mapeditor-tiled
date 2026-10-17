@@ -614,6 +614,12 @@ void TilesetDock::createTilesetView(int index, TilesetDocument *tilesetDocument)
 
     TilesetView *view = new TilesetView;
 
+    // Hide the tiles that are only a frame of an animation, when requested
+    Preferences *prefs = Preferences::instance();
+    view->setHideAnimationFrames(prefs->hideAnimationFrames());
+    connect(prefs, &Preferences::hideAnimationFramesChanged,
+            view, &TilesetView::setHideAnimationFrames);
+
     // Hides the "New Tileset..." special view if it is shown.
     mSuperViewStack->setCurrentIndex(1);
 
@@ -724,6 +730,9 @@ void TilesetDock::tilesetChanged(Tileset *tileset)
         view->updateBackgroundColor();
         model->tilesetChanged();
     }
+
+    // The tileset may have been reloaded, which can change its properties
+    updateTabInfo(index);
 }
 
 /**
