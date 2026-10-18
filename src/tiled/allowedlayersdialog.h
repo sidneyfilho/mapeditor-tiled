@@ -23,6 +23,7 @@
 
 class QLineEdit;
 class QListWidget;
+class QTableWidget;
 
 namespace Tiled {
 
@@ -50,6 +51,66 @@ private:
 
     QListWidget *mList;
     QLineEdit *mNewName;
+};
+
+/**
+ * A dialog giving an overview of the layers on which each tileset may be used,
+ * as a table with a row per tileset and a column per layer name. Checking a
+ * cell allows the tileset on layers with that name. Tilesets without any
+ * checked cell can be used on any layer.
+ */
+class AllowedLayersOverviewDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    AllowedLayersOverviewDialog(const QStringList &tilesetNames,
+                                const QStringList &layerNames,
+                                const QList<QStringList> &allowedLayers,
+                                QWidget *parent = nullptr);
+
+    /**
+     * Returns the allowed layers for each tileset, in the order in which the
+     * tilesets were given.
+     */
+    QList<QStringList> allowedLayers() const;
+
+private:
+    void addLayerColumn(const QString &name);
+    void addNewLayerColumn();
+    int columnOf(const QString &name) const;
+    void updateRestriction(int row);
+    void toggleColumn(int column);
+
+    QTableWidget *mTable;
+    QLineEdit *mNewName;
+    bool mUpdating = false;
+};
+
+/**
+ * A dialog that lists the tiles that are on a layer on which their tileset is
+ * not allowed. Activating a row emits entryActivated, so that the owner can
+ * select the layer and the tiles.
+ */
+class AllowedLayersCheckDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    struct Entry {
+        QString layerPath;
+        QString tilesetName;
+        int tileCount;
+        QString allowedLayers;
+    };
+
+    AllowedLayersCheckDialog(const QList<Entry> &entries, QWidget *parent = nullptr);
+
+signals:
+    void entryActivated(int index);
+
+private:
+    QTableWidget *mTable;
 };
 
 } // namespace Tiled

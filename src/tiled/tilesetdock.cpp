@@ -24,6 +24,7 @@
 
 #include "actionmanager.h"
 #include "allowedlayersdialog.h"
+#include "changeselectedarea.h"
 #include "addremovemapobject.h"
 #include "addremovetileset.h"
 #include "changeproperties.h"
@@ -34,7 +35,9 @@
 #include "grouplayer.h"
 #include "map.h"
 #include "mapdocument.h"
+#include "mapview.h"
 #include "mapobject.h"
+#include "maprenderer.h"
 #include "objectgroup.h"
 #include "preferences.h"
 #include "replacetileset.h"
@@ -64,6 +67,7 @@
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPointer>
 #include <QMimeData>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -191,6 +195,7 @@ TilesetDock::TilesetDock(QWidget *parent)
     , mEmbedTileset(new QAction(this))
     , mExportTileset(new QAction(this))
     , mEditTileset(new QAction(this))
+    , mReloadTilesets(new QAction(this))
     , mReplaceTileset(new QAction(this))
     , mRemoveTileset(new QAction(this))
     , mSelectNextTileset(new QAction(this))
@@ -260,6 +265,7 @@ TilesetDock::TilesetDock(QWidget *parent)
     mEmbedTileset->setIcon(QIcon(QLatin1String(":images/16/document-import.png")));
     mExportTileset->setIcon(QIcon(QLatin1String(":images/16/document-export.png")));
     mEditTileset->setIcon(QIcon(QLatin1String(":images/16/document-properties.png")));
+    mReloadTilesets->setIcon(QIcon(QLatin1String(":images/scalable/reload.svg")));
     mReplaceTileset->setIcon(QIcon(QLatin1String(":images/scalable/replace.svg")));
     mRemoveTileset->setIcon(QIcon(QLatin1String(":images/16/edit-delete.png")));
 
@@ -273,6 +279,7 @@ TilesetDock::TilesetDock(QWidget *parent)
     connect(mEmbedTileset, &QAction::triggered, this, &TilesetDock::embedTileset);
     connect(mExportTileset, &QAction::triggered, this, &TilesetDock::exportTileset);
     connect(mEditTileset, &QAction::triggered, this, &TilesetDock::editTileset);
+    connect(mReloadTilesets, &QAction::triggered, this, [this] { reloadTilesets(mTilesetDocuments); });
     connect(mReplaceTileset, &QAction::triggered, this, &TilesetDock::replaceTileset);
     connect(mRemoveTileset, &QAction::triggered, this, &TilesetDock::removeTileset);
     connect(mSelectNextTileset, &QAction::triggered, this, [this] { mTabBar->setCurrentIndex(mTabBar->currentIndex() + 1); });
@@ -909,6 +916,8 @@ void TilesetDock::retranslateUi()
     mEmbedTileset->setText(tr("&Embed Tileset"));
     mExportTileset->setText(tr("&Export Tileset As..."));
     mEditTileset->setText(tr("Edit Tile&set"));
+    mReloadTilesets->setText(tr("Reload All Tilesets"));
+    mReloadTilesets->setToolTip(tr("Reload the tileset files from disk, keeping the allowed layers"));
     mReplaceTileset->setText(tr("Replace Tileset"));
     mRemoveTileset->setText(tr("&Remove Tileset"));
     mSelectNextTileset->setText(tr("Select Next Tileset"));
@@ -1012,6 +1021,9 @@ void TilesetDock::tabContextMenuRequested(const QPoint &pos)
         DocumentManager::instance()->openTileset(tileset);
     });
     menu.addAction(tr("Allowed Layers..."), this, [=] { editAllowedLayers(tilesetDocument); });
+    QAction *reload = menu.addAction(mReloadTilesets->icon(), tr("Reload Tileset"),
+                                     this, [=] { reloadTilesets({ tilesetDocument }); });
+    reload->setEnabled(!tilesetDocument->isEmbedded());
 
     menu.exec(mTabBar->mapToGlobal(pos));
 }
@@ -1284,6 +1296,106 @@ void TilesetDock::tilesetFileNameChanged(const QString &fileName)
     updateActions();
 }
 
+static QString layerPath(const Layer *layer)
+{
+    QStringList names;
+    for (; layer; layer = layer->parentLayer())
+        names.prepend(layer->name());
+    return names.join(QStringLiteral(" / "));
+}
+
+/**
+ * Looks for tiles that are on layers on which their tileset is not allowed,
+ * and shows them in a list. Activating an entry selects the layer and the
+ * wrong tiles on it.
+ */
+void TilesetDock::checkAllowedLayers()
+{
+    if (!mMapDocument)
+        return;
+
+    const auto wrongTiles = mMapDocument->findTilesOnWrongLayers();
+    if (wrongTiles.isEmpty()) {
+        QMessageBox::information(this, tr("Tiles on Wrong Layers"),
+                                 tr("No tiles were found on layers where their tileset is not allowed."));
+        return;
+    }
+
+    // Entries are identified by layer ID and tileset name, since the map may
+    // change while the dialog stays open.
+    QList<AllowedLayersCheckDialog::Entry> entries;
+    QList<QPair<int, QString>> keys;
+    for (const auto &wrong : wrongTiles) {
+        int tileCount = 0;
+        for (const QRect &rect : wrong.region)
+            tileCount += rect.width() * rect.height();
+
+        entries.append({ layerPath(wrong.layer), wrong.tileset->name(), tileCount, wrong.allowedLayers });
+        keys.append({ wrong.layer->id(), wrong.tileset->name() });
+    }
+
+    auto dialog = new AllowedLayersCheckDialog(entries, this);
+    QPointer<MapDocument> mapDocument = mMapDocument;
+
+    connect(dialog, &AllowedLayersCheckDialog::entryActivated, this, [=] (int index) {
+        if (!mapDocument || mapDocument != mMapDocument)
+            return;
+
+        const auto current = mapDocument->findTilesOnWrongLayers();
+        for (const auto &wrong : current) {
+            if (wrong.layer->id() != keys.at(index).first || wrong.tileset->name() != keys.at(index).second)
+                continue;
+
+            mapDocument->switchSelectedLayers({ wrong.layer });
+            mapDocument->undoStack()->push(new ChangeSelectedArea(mapDocument, wrong.region));
+
+            if (MapView *view = DocumentManager::instance()->currentMapView()) {
+                const QRect rect = *wrong.region.begin();
+                const QPointF center(rect.x() + rect.width() / 2.0, rect.y() + rect.height() / 2.0);
+                view->forceCenterOn(mapDocument->renderer()->tileToScreenCoords(center), *wrong.layer);
+            }
+            return;
+        }
+
+        QMessageBox::information(this, tr("Tiles on Wrong Layers"),
+                                 tr("These tiles are no longer on a wrong layer."));
+    });
+
+    dialog->show();
+}
+
+/**
+ * Reloads the given external tilesets from disk. Tilesets with unsaved changes are
+ * skipped, so that those changes are not lost. The allowed layers of a tileset
+ * are kept when the file on disk does not specify them (see
+ * TilesetDocument::reload).
+ */
+void TilesetDock::reloadTilesets(const QList<TilesetDocument*> &tilesetDocuments)
+{
+    int skipped = 0;
+
+    // Reloading may change the list of documents, so work on a copy
+    const auto documents = tilesetDocuments;
+    for (TilesetDocument *tilesetDocument : documents) {
+        if (tilesetDocument->isEmbedded() || !tilesetDocument->canReload())
+            continue;
+
+        if (tilesetDocument->isModified()) {
+            ++skipped;
+            continue;
+        }
+
+        if (DocumentManager::instance()->reloadDocument(tilesetDocument))
+            TilesetManager::instance()->reloadImages(tilesetDocument->tileset().data());
+    }
+
+    if (skipped > 0) {
+        QMessageBox::information(this, tr("Reload Tilesets"),
+                                 tr("%n tileset(s) with unsaved changes were not reloaded.",
+                                    nullptr, skipped));
+    }
+}
+
 static void collectLayerNames(const QList<Layer*> &layers, QStringList &names)
 {
     for (Layer *layer : layers) {
@@ -1292,6 +1404,45 @@ static void collectLayerNames(const QList<Layer*> &layers, QStringList &names)
         } else if (!names.contains(layer->name(), Qt::CaseInsensitive)) {
             names.append(layer->name());
         }
+    }
+}
+
+static QStringList allowedLayersOf(const Tileset &tileset)
+{
+    QStringList allowedLayers;
+
+    const auto names = tileset.property(QStringLiteral("allowedLayers")).toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &name : names)
+        allowedLayers.append(name.trimmed());
+
+    return allowedLayers;
+}
+
+static bool sameLayerNames(const QStringList &a, const QStringList &b)
+{
+    if (a.size() != b.size())
+        return false;
+
+    return std::all_of(a.begin(), a.end(), [&] (const QString &name) {
+        return b.contains(name, Qt::CaseInsensitive);
+    });
+}
+
+/**
+ * Stores the layers on which the tileset may be used in its "allowedLayers"
+ * custom property, or removes the property when there is no restriction.
+ */
+static void setAllowedLayers(TilesetDocument *tilesetDocument, const QStringList &allowedLayers)
+{
+    const QString property = QStringLiteral("allowedLayers");
+    Tileset *tileset = tilesetDocument->tileset().data();
+
+    if (allowedLayers.isEmpty()) {
+        if (tileset->hasProperty(property))
+            tilesetDocument->undoStack()->push(new RemoveProperty(tilesetDocument, { tileset }, property));
+    } else {
+        tilesetDocument->undoStack()->push(new SetProperty(tilesetDocument, { tileset }, property,
+                                                           allowedLayers.join(QStringLiteral(", "))));
     }
 }
 
@@ -1305,28 +1456,44 @@ void TilesetDock::editAllowedLayers(TilesetDocument *tilesetDocument)
     if (!mMapDocument)
         return;
 
-    const QString property = QStringLiteral("allowedLayers");
-    Tileset *tileset = tilesetDocument->tileset().data();
-
-    QStringList allowedLayers;
-    const auto names = tileset->property(property).toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
-    for (const QString &name : names)
-        allowedLayers.append(name.trimmed());
+    const Tileset *tileset = tilesetDocument->tileset().data();
 
     QStringList layerNames;
     collectLayerNames(mMapDocument->map()->layers(), layerNames);
 
-    AllowedLayersDialog dialog(tileset->name(), layerNames, allowedLayers, this);
+    AllowedLayersDialog dialog(tileset->name(), layerNames, allowedLayersOf(*tileset), this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    const QStringList result = dialog.allowedLayers();
-    if (result.isEmpty()) {
-        if (tileset->hasProperty(property))
-            tilesetDocument->undoStack()->push(new RemoveProperty(tilesetDocument, { tileset }, property));
-    } else {
-        tilesetDocument->undoStack()->push(new SetProperty(tilesetDocument, { tileset }, property,
-                                                           result.join(QStringLiteral(", "))));
+    setAllowedLayers(tilesetDocument, dialog.allowedLayers());
+}
+
+/**
+ * Shows the allowed layers of all tilesets at once, and allows changing them.
+ */
+void TilesetDock::editAllAllowedLayers()
+{
+    if (!mMapDocument)
+        return;
+
+    QStringList tilesetNames;
+    QList<QStringList> allowedLayers;
+    for (const TilesetDocument *tilesetDocument : std::as_const(mTilesetDocuments)) {
+        tilesetNames.append(tabTitle(tilesetDocument));
+        allowedLayers.append(allowedLayersOf(*tilesetDocument->tileset()));
+    }
+
+    QStringList layerNames;
+    collectLayerNames(mMapDocument->map()->layers(), layerNames);
+
+    AllowedLayersOverviewDialog dialog(tilesetNames, layerNames, allowedLayers, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QList<QStringList> result = dialog.allowedLayers();
+    for (int i = 0; i < mTilesetDocuments.size() && i < result.size(); ++i) {
+        if (!sameLayerNames(result.at(i), allowedLayers.at(i)))
+            setAllowedLayers(mTilesetDocuments.at(i), result.at(i));
     }
 }
 
@@ -1349,6 +1516,9 @@ void TilesetDock::refreshTilesetMenu()
     mTilesetMenu->addSeparator();
     if (auto tilesetDocument = currentTilesetDocument())
         mTilesetMenu->addAction(tr("Allowed Layers..."), this, [=] { editAllowedLayers(tilesetDocument); });
+    mTilesetMenu->addAction(tr("All Allowed Layers..."), this, &TilesetDock::editAllAllowedLayers);
+    mTilesetMenu->addAction(tr("Check Layers for Wrong Tiles..."), this, &TilesetDock::checkAllowedLayers);
+    mTilesetMenu->addAction(mReloadTilesets);
     mTilesetMenu->addAction(mShowTilesetFilter);
     mTilesetMenu->addAction(ActionManager::action("AddExternalTileset"));
 }

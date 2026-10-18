@@ -150,6 +150,9 @@ private:
     void embedTileset();
     void exportTileset();
     void editAllowedLayers(TilesetDocument *tilesetDocument);
+    void editAllAllowedLayers();
+    void checkAllowedLayers();
+    void reloadTilesets(const QList<TilesetDocument*> &tilesetDocuments);
 
     void refreshTilesetMenu();
 
@@ -196,6 +199,7 @@ private:
     QAction *mEmbedTileset;
     QAction *mExportTileset;
     QAction *mEditTileset;
+    QAction *mReloadTilesets;
     QAction *mReplaceTileset;
     QAction *mRemoveTileset;
     QAction *mSelectNextTileset;

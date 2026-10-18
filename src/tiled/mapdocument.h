@@ -178,6 +178,14 @@ public:
     SharedTileset replaceTileset(int index, const SharedTileset &tileset);
 
     QList<TileLayer*> findTargetLayers(const QList<const TileLayer *> &sourceLayers) const;
+    struct WrongLayerTiles {
+        TileLayer *layer;
+        SharedTileset tileset;
+        QRegion region;
+        QString allowedLayers;
+    };
+
+    QList<WrongLayerTiles> findTilesOnWrongLayers() const;
     bool canPaintOnLayer(const TileLayer *source, const TileLayer *target);
     void selectLayerForTiles(const TileLayer *tiles);
     void paintTileLayers(const Map &map, bool mergeable = false,

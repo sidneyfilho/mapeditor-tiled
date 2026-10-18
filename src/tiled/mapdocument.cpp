@@ -1096,6 +1096,38 @@ bool MapDocument::canPaintOnLayer(const TileLayer *source, const TileLayer *targ
     return true;
 }
 
+/**
+ * Finds the tiles that are on a layer on which their tileset is not allowed
+ * (see canPaintOnLayer), for example because the layer was renamed or the
+ * restriction of the tileset was added later.
+ */
+QList<MapDocument::WrongLayerTiles> MapDocument::findTilesOnWrongLayers() const
+{
+    QList<WrongLayerTiles> result;
+
+    LayerIterator iterator(mMap.get(), Layer::TileLayerType);
+    while (Layer *layer = iterator.next()) {
+        auto tileLayer = static_cast<TileLayer*>(layer);
+
+        const auto tilesets = tileLayer->usedTilesets();
+        for (const SharedTileset &tileset : tilesets) {
+            QString allowedLayers;
+            if (isTilesetAllowedOnLayer(*tileset, tileLayer->name(), &allowedLayers))
+                continue;
+
+            const Tileset *tilesetPointer = tileset.data();
+            const QRegion region = tileLayer->region([=] (const Cell &cell) {
+                return cell.tileset() == tilesetPointer;
+            });
+
+            if (!region.isEmpty())
+                result.append({ tileLayer, tileset, region, allowedLayers });
+        }
+    }
+
+    return result;
+}
+
 static void collectTileLayers(const QList<Layer*> &layers, QList<TileLayer*> &tileLayers)
 {
     for (Layer *layer : layers) {
