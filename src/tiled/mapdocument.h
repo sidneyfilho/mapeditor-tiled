@@ -186,6 +186,10 @@ public:
     };
 
     QList<WrongLayerTiles> findTilesOnWrongLayers() const;
+
+    QStringList tileLayerNames() const;
+    static QString allowedLayerForTilesetName(const QString &tilesetName,
+                                              const QStringList &layerNames);
     bool canPaintOnLayer(const TileLayer *source, const TileLayer *target);
     void selectLayerForTiles(const TileLayer *tiles);
     void paintTileLayers(const Map &map, bool mergeable = false,

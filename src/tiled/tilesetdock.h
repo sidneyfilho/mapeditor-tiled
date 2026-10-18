@@ -152,6 +152,7 @@ private:
     void editAllowedLayers(TilesetDocument *tilesetDocument);
     void editAllAllowedLayers();
     void checkAllowedLayers();
+    void applyNamingRule();
     void reloadTilesets(const QList<TilesetDocument*> &tilesetDocuments);
 
     void refreshTilesetMenu();

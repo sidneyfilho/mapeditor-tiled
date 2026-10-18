@@ -166,6 +166,23 @@ bool TilesetDocument::reload(QString *error)
     if (!tileset->hasProperty(allowedLayers) && mTileset->hasProperty(allowedLayers))
         tileset->setProperty(allowedLayers, mTileset->property(allowedLayers));
 
+    // When there is no restriction at all, apply the naming rule, so that
+    // regenerated tilesets get their allowed layers again (see
+    // MapDocument::allowedLayerForTilesetName).
+    if (!tileset->hasProperty(allowedLayers)) {
+        QStringList layerNames;
+        for (const MapDocument *mapDocument : std::as_const(mMapDocuments)) {
+            for (const QString &name : mapDocument->tileLayerNames()) {
+                if (!layerNames.contains(name, Qt::CaseInsensitive))
+                    layerNames.append(name);
+            }
+        }
+
+        const QString layerName = MapDocument::allowedLayerForTilesetName(tileset->name(), layerNames);
+        if (!layerName.isEmpty())
+            tileset->setProperty(allowedLayers, layerName);
+    }
+
     undoStack()->push(new ReloadTileset(this, tileset));
     undoStack()->setClean();
     mLastSaved = QFileInfo(fileName()).lastModified();

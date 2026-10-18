@@ -1128,6 +1128,45 @@ QList<MapDocument::WrongLayerTiles> MapDocument::findTilesOnWrongLayers() const
     return result;
 }
 
+/**
+ * Returns the names of the tile layers in the map, without duplicates.
+ */
+QStringList MapDocument::tileLayerNames() const
+{
+    QStringList names;
+
+    LayerIterator iterator(mMap.get(), Layer::TileLayerType);
+    while (const Layer *layer = iterator.next()) {
+        if (!names.contains(layer->name(), Qt::CaseInsensitive))
+            names.append(layer->name());
+    }
+
+    return names;
+}
+
+/**
+ * Naming rule for allowed layers: a tileset named after a layer, optionally
+ * followed by an underscore and a suffix, is meant for that layer. For example
+ * "floor_ground" is meant for the layer "floor", and "floor_details_ground"
+ * for "floor_details". When several layer names match, the longest one wins.
+ * Returns an empty string when no layer name matches.
+ */
+QString MapDocument::allowedLayerForTilesetName(const QString &tilesetName,
+                                                const QStringList &layerNames)
+{
+    QString result;
+
+    for (const QString &name : layerNames) {
+        const bool matches = tilesetName.compare(name, Qt::CaseInsensitive) == 0 ||
+                tilesetName.startsWith(name + QLatin1Char('_'), Qt::CaseInsensitive);
+
+        if (matches && name.size() > result.size())
+            result = name;
+    }
+
+    return result;
+}
+
 static void collectTileLayers(const QList<Layer*> &layers, QList<TileLayer*> &tileLayers)
 {
     for (Layer *layer : layers) {

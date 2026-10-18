@@ -1497,6 +1497,37 @@ void TilesetDock::editAllAllowedLayers()
     }
 }
 
+/**
+ * Gives the tilesets without allowed layers the layer that matches their name
+ * (see MapDocument::allowedLayerForTilesetName). Tilesets that already have
+ * allowed layers are left alone.
+ */
+void TilesetDock::applyNamingRule()
+{
+    if (!mMapDocument)
+        return;
+
+    const QStringList layerNames = mMapDocument->tileLayerNames();
+
+    int assigned = 0;
+    for (TilesetDocument *tilesetDocument : std::as_const(mTilesetDocuments)) {
+        const Tileset &tileset = *tilesetDocument->tileset();
+        if (!allowedLayersOf(tileset).isEmpty())
+            continue;
+
+        const QString layerName = MapDocument::allowedLayerForTilesetName(tileset.name(), layerNames);
+        if (layerName.isEmpty())
+            continue;
+
+        setAllowedLayers(tilesetDocument, { layerName });
+        ++assigned;
+    }
+
+    QMessageBox::information(this, tr("Allowed Layers by Name"),
+                             tr("%n tileset(s) were given allowed layers based on their name.",
+                                nullptr, assigned));
+}
+
 void TilesetDock::refreshTilesetMenu()
 {
     mTilesetMenu->clear();
@@ -1518,6 +1549,7 @@ void TilesetDock::refreshTilesetMenu()
         mTilesetMenu->addAction(tr("Allowed Layers..."), this, [=] { editAllowedLayers(tilesetDocument); });
     mTilesetMenu->addAction(tr("All Allowed Layers..."), this, &TilesetDock::editAllAllowedLayers);
     mTilesetMenu->addAction(tr("Check Layers for Wrong Tiles..."), this, &TilesetDock::checkAllowedLayers);
+    mTilesetMenu->addAction(tr("Allowed Layers by Name"), this, &TilesetDock::applyNamingRule);
     mTilesetMenu->addAction(mReloadTilesets);
     mTilesetMenu->addAction(mShowTilesetFilter);
     mTilesetMenu->addAction(ActionManager::action("AddExternalTileset"));
