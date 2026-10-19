@@ -24,12 +24,15 @@
 #include "layerdock.h"
 
 #include "actionmanager.h"
+#include "changelayer.h"
+#include "grouplayer.h"
 #include "layer.h"
 #include "layermodel.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapdocumentactionhandler.h"
 #include "reversingproxymodel.h"
+#include "structurelayers.h"
 #include "utils.h"
 #include "iconcheckdelegate.h"
 #include "changeevents.h"
@@ -403,6 +406,34 @@ void LayerView::contextMenuEvent(QContextMenuEvent *event)
         menu.addAction(handler->actionToggleLockSelectedLayers());
         menu.addAction(handler->actionToggleOtherLayers());
         menu.addAction(handler->actionToggleLockOtherLayers());
+
+        // On a level of a structure (see StructureLayers), offer to show
+        // only that level, hiding the other levels of the same structure.
+        const QModelIndex index = mProxyModel->mapToSource(proxyIndex);
+        Layer *layer = mMapDocument->layerModel()->toLayer(index);
+        if (StructureLayers::isStructureLevel(layer)) {
+            QAction *showOnlyLevel = menu.addAction(tr("Show Only This Level"));
+            connect(showOnlyLevel, &QAction::triggered, this, [this, layer] {
+                QList<Layer*> show;
+                QList<Layer*> hide;
+                if (!layer->isVisible())
+                    show.append(layer);
+                for (Layer *sibling : layer->parentLayer()->layers())
+                    if (sibling != layer && sibling->isVisible())
+                        hide.append(sibling);
+                if (show.isEmpty() && hide.isEmpty())
+                    return;
+
+                QUndoStack *undoStack = mMapDocument->undoStack();
+                undoStack->beginMacro(tr("Show Only Level %1").arg(layer->name()));
+                if (!show.isEmpty())
+                    undoStack->push(new SetLayerVisible(mMapDocument, show, true));
+                if (!hide.isEmpty())
+                    undoStack->push(new SetLayerVisible(mMapDocument, hide, false));
+                undoStack->endMacro();
+            });
+        }
+
         menu.addSeparator();
         menu.addAction(handler->actionLayerProperties());
     }

@@ -36,6 +36,7 @@
 #include "objectgroupitem.h"
 #include "objectselectionitem.h"
 #include "preferences.h"
+#include "structurelayers.h"
 #include "tilelayer.h"
 #include "tilelayeritem.h"
 #include "tileselectionitem.h"
@@ -967,11 +968,10 @@ int MapItem::currentFloorIndex() const
 {
     int index = -1;
 
-    for (Layer *layer : mapDocument()->selectedLayers()) {
-        while (layer->parentLayer())
-            layer = layer->parentLayer();
-        index = qMax(index, layer->siblingIndex());
-    }
+    // Layers inside a structure belong to the floor of the same name as
+    // their floor group (see StructureLayers).
+    for (Layer *layer : mapDocument()->selectedLayers())
+        index = qMax(index, StructureLayers::floorIndexOf(layer));
 
     return index;
 }
@@ -984,12 +984,26 @@ int MapItem::currentFloorIndex() const
 void MapItem::applyFloorState(Layer *layer, QGraphicsItem *layerItem, int currentFloor) const
 {
     bool visible = layer->isVisible();
+    qreal opacity = layer->opacity();
 
-    if (currentFloor >= 0 && !layer->parentLayer() && layer->siblingIndex() > currentFloor)
-        visible = false;
+    if (currentFloor >= 0) {
+        if (!layer->parentLayer() && !StructureLayers::isStructure(layer)
+                && layer->siblingIndex() > currentFloor) {
+            visible = false;
+        } else if (StructureLayers::isStructureLevel(layer->parentLayer())) {
+            // A floor group of a structure follows the floor of the same
+            // name. Structures are not covered by the dark rectangle, so the
+            // floors below the current one are faded instead.
+            const int floor = StructureLayers::floorIndexByName(layer->map(), layer->name());
+            if (floor > currentFloor)
+                visible = false;
+            else if (floor >= 0 && floor < currentFloor)
+                opacity *= 0.5;
+        }
+    }
 
     layerItem->setVisible(visible);
-    layerItem->setOpacity(layer->opacity());
+    layerItem->setOpacity(opacity);
 }
 
 void MapItem::applyFloorMode()

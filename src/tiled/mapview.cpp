@@ -29,6 +29,7 @@
 #include "objectgroup.h"
 #include "pannableviewhelper.h"
 #include "preferences.h"
+#include "structurelayers.h"
 #include "tileanimationdriver.h"
 #include "utils.h"
 #include "zoomable.h"
@@ -40,6 +41,8 @@
 #include <QPinchGesture>
 #include <QScrollBar>
 #include <QWheelEvent>
+
+#include <algorithm>
 
 #ifndef QT_NO_OPENGL
 
@@ -658,10 +661,34 @@ static void collectLeafLayers(Layer *layer, QList<Layer*> &leaves)
 }
 
 /**
+ * Returns the floor 'steps' floors up (positive) or down (negative) from the
+ * given floor among the given candidates, sorted by their floor index, or
+ * nullptr when there is none.
+ */
+static Layer *stepFloor(const QList<QPair<int, Layer*>> &candidates, int currentIndex, int steps)
+{
+    int position = -1;
+    for (int i = 0; i < candidates.size(); ++i)
+        if (candidates.at(i).first == currentIndex)
+            position = i;
+    if (position < 0)
+        return nullptr;
+
+    const int newPosition = qBound(0, position + steps, int(candidates.size()) - 1);
+    if (newPosition == position)
+        return nullptr;
+    return candidates.at(newPosition).second;
+}
+
+/**
  * Moves the selection to another floor (a top-level layer), 'steps' floors
  * up (positive) or down (negative). Prefers selecting a layer with the same
  * name as the currently selected layer, so that the same kind of layer stays
  * selected while changing floors.
+ *
+ * Inside a structure (see StructureLayers), the selection moves between the
+ * floor groups of the same structure level. Structures themselves are not
+ * floors and are skipped.
  */
 void MapView::changeFloor(int steps)
 {
@@ -672,16 +699,31 @@ void MapView::changeFloor(int steps)
     if (!current)
         return;
 
-    Layer *currentFloor = current;
-    while (currentFloor->parentLayer())
-        currentFloor = currentFloor->parentLayer();
+    QList<QPair<int, Layer*>> candidates;
+    int currentIndex;
 
-    const auto &floors = mMapDocument->map()->layers();
-    const int newIndex = qBound(0, currentFloor->siblingIndex() + steps, int(floors.size()) - 1);
-    if (newIndex == currentFloor->siblingIndex())
+    if (Layer *floorGroup = StructureLayers::structureFloorGroup(current)) {
+        currentIndex = StructureLayers::floorIndexOf(floorGroup);
+        for (Layer *sibling : floorGroup->parentLayer()->layers()) {
+            const int index = StructureLayers::floorIndexOf(sibling);
+            if (index >= 0)
+                candidates.append({ index, sibling });
+        }
+        std::sort(candidates.begin(), candidates.end(),
+                  [] (const QPair<int, Layer*> &a, const QPair<int, Layer*> &b) { return a.first < b.first; });
+    } else {
+        Layer *currentFloor = StructureLayers::topLevelLayer(current);
+        currentIndex = currentFloor->siblingIndex();
+        const auto &floors = mMapDocument->map()->layers();
+        for (int i = 0; i < floors.size(); ++i)
+            if (!StructureLayers::isStructure(floors.at(i)))
+                candidates.append({ i, floors.at(i) });
+    }
+
+    Layer *newFloor = stepFloor(candidates, currentIndex, steps);
+    if (!newFloor)
         return;
 
-    Layer *newFloor = floors.at(newIndex);
     QList<Layer*> leaves;
     collectLeafLayers(newFloor, leaves);
 

@@ -480,6 +480,7 @@ DynamicLibrary {
         "stampactions.h",
         "stampbrush.cpp",
         "stampbrush.h",
+        "structurelayers.h",
         "stylehelper.cpp",
         "stylehelper.h",
         "swaptiles.cpp",
