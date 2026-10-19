@@ -30,17 +30,17 @@ namespace Tiled {
 /**
  * Structures are buildings that evolve through levels (a house, a barn...).
  *
- * A structure is a top-level group layer with the class "Estrutura". It
+ * A structure is a top-level group layer with the class "Structure". It
  * contains one group per level, and each level contains groups named after
  * the floors of the map ("layer5", "layer6"...) holding the usual layers:
  *
- *   Casa              (class "Estrutura")
- *     Casa 1          (a level)
+ *   house             (class "Structure")
+ *     house 1         (a level, int property "level")
  *       layer5        (drawn as part of the floor "layer5")
  *         floor, items
  *       layer6
  *         items
- *     Casa 2
+ *     house 2
  *       ...
  *
  * A structure is not a floor itself. Its floor groups belong to the top-level
@@ -50,7 +50,7 @@ namespace StructureLayers {
 
 inline const QString &structureClassName()
 {
-    static const QString name = QStringLiteral("Estrutura");
+    static const QString name = QStringLiteral("Structure");
     return name;
 }
 
